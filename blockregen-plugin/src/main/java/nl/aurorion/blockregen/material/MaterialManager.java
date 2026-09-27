@@ -15,6 +15,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.MatchResult;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -30,7 +31,7 @@ public class MaterialManager {
 
     private final LinkedHashMap<String, MaterialProvider> registeredProviders = new LinkedHashMap<>();
 
-    private final Map<String, BlockRegenMaterial> cachedMaterialInputs = new HashMap<>();
+    private final Map<String, BlockRegenMaterial> cachedMaterialInputs = new ConcurrentHashMap<>();
 
     public MaterialManager(BlockRegenPlugin plugin) {
         this.plugin = plugin;
@@ -52,7 +53,7 @@ public class MaterialManager {
      * A prefix cannot match a material name, otherwise the parsing screws up. We could use a different separator, but
      * screw it, a colon looks cool.
      */
-    public void register(@Nullable String prefix, @NotNull MaterialProvider provider) {
+    public synchronized void register(@Nullable String prefix, @NotNull MaterialProvider provider) {
         prefix = (prefix == null ? null : prefix.toLowerCase());
 
         MaterialProvider registeredProvider = registeredProviders.get(prefix);
@@ -70,7 +71,7 @@ public class MaterialManager {
     }
 
     @SuppressWarnings("unchecked")
-    private Iterator<Map.Entry<String, MaterialProvider>> reversedEntryIterator() {
+    private synchronized Iterator<Map.Entry<String, MaterialProvider>> reversedEntryIterator() {
         Map.Entry<String, MaterialProvider>[] array = (Map.Entry<String, MaterialProvider>[]) this.registeredProviders.entrySet().toArray(new Map.Entry[0]);
 
         class ReversedEntryIterator implements Iterator<Map.Entry<String, MaterialProvider>> {

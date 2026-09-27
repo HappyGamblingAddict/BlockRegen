@@ -8,6 +8,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * A common interface for an Area in which blocks regenerate.
@@ -17,22 +18,22 @@ public abstract class RegenerationArea {
     @Getter
     protected final String name;
 
-    protected final Set<String> presets = new HashSet<>();
+    protected final Set<String> presets = ConcurrentHashMap.newKeySet();
 
     @Getter
     @Setter
-    protected boolean all = true;
+    protected volatile boolean all = true;
 
     @Getter
     @Setter
     @Nullable
     // null => take from Settings.yml
-    protected Boolean disableOtherBreak = null;
+    protected volatile Boolean disableOtherBreak = null;
 
     // After changing the priority, always call RegionManager#sort to resort the regions.
     @Getter
     @Setter
-    protected int priority = 1;
+    protected volatile int priority = 1;
 
     public RegenerationArea(String name) {
         this.name = name;
@@ -47,7 +48,7 @@ public abstract class RegenerationArea {
         section.set("Priority", this.priority);
     }
 
-    public boolean switchAll() {
+    public synchronized boolean switchAll() {
         setAll(!isAll());
         return isAll();
     }

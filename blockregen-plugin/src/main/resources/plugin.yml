@@ -21,6 +21,7 @@ softdepend:
   - EcoItems
   - CraftEngine
 api-version: "1.13"
+folia-supported: true
 commands:
   blockregen:
     aliases: [ br, bregen, blockr, breg, brg ]

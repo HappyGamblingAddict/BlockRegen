@@ -20,6 +20,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.List;
+import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.logging.Level;
@@ -128,7 +129,7 @@ public class GsonHelper {
         Path path = Paths.get(dataPath);
 
         if (!Files.exists(path))
-            return new CompletableFuture<>();
+            return CompletableFuture.completedFuture(Collections.emptyList());
 
         final Type type = mapList(innerClazz);
 

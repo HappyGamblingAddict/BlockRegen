@@ -7,6 +7,7 @@ import lombok.Setter;
 import lombok.extern.java.Log;
 import nl.aurorion.blockregen.BlockRegenPluginImpl;
 import nl.aurorion.blockregen.preset.drop.DropItem;
+import nl.aurorion.blockregen.scheduler.Scheduler;
 import nl.aurorion.blockregen.util.Text;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -46,19 +47,23 @@ public class PresetRewards {
 
         final Function<String, String> finalParser = (string) -> Text.replace(parser.apply(string), "earned_money", money.get());
 
-        Bukkit.getScheduler().runTask(BlockRegenPluginImpl.getInstance(), () -> {
-            for (Command command : playerCommands) {
-                if (command.shouldExecute()) {
-                    Bukkit.dispatchCommand(player, finalParser.apply(command.getCommand()));
-                }
+        for (Command command : playerCommands) {
+            if (command.shouldExecute()) {
+                Bukkit.dispatchCommand(player, finalParser.apply(command.getCommand()));
             }
+        }
 
-            for (Command command : consoleCommands) {
-                if (command.shouldExecute()) {
-                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), finalParser.apply(command.getCommand()));
-                }
+        List<String> parsedConsoleCommands = new ArrayList<>();
+        for (Command command : consoleCommands) {
+            if (command.shouldExecute()) {
+                parsedConsoleCommands.add(finalParser.apply(command.getCommand()));
             }
-        });
+        }
+
+        if (!parsedConsoleCommands.isEmpty()) {
+            Scheduler.runGlobal(BlockRegenPluginImpl.getInstance(), () -> parsedConsoleCommands.forEach(command ->
+                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command)));
+        }
     }
 
     public void parseConsoleCommands(@NotNull List<String> consoleCommands) {

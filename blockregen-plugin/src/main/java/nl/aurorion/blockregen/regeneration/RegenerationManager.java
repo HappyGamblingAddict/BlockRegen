@@ -8,8 +8,11 @@ import nl.aurorion.blockregen.Pair;
 import nl.aurorion.blockregen.material.BlockRegenMaterial;
 import nl.aurorion.blockregen.preset.BlockPreset;
 import nl.aurorion.blockregen.regeneration.struct.RegenerationProcess;
+import nl.aurorion.blockregen.regeneration.struct.SimpleLocation;
 import nl.aurorion.blockregen.region.struct.RegenerationArea;
-import org.bukkit.Bukkit;
+import nl.aurorion.blockregen.scheduler.Scheduler;
+import org.bukkit.Location;
+import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
@@ -22,6 +25,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 
 @Log
@@ -37,9 +41,12 @@ public class RegenerationManager {
     @Getter
     private boolean retry = false;
 
-    private final Set<UUID> bypass = new HashSet<>();
+    @Getter
+    private volatile boolean storageLoadComplete = false;
 
-    private final Set<UUID> dataCheck = new HashSet<>();
+    private final Set<UUID> bypass = ConcurrentHashMap.newKeySet();
+
+    private final Set<UUID> dataCheck = ConcurrentHashMap.newKeySet();
 
     public RegenerationManager(BlockRegenPlugin plugin) {
         this.plugin = plugin;
@@ -118,16 +125,17 @@ public class RegenerationManager {
     /**
      * Register the process as running.
      */
-    public void registerProcess(@NotNull RegenerationProcess process) {
+    public boolean registerProcess(@NotNull RegenerationProcess process) {
         Objects.requireNonNull(process);
 
-        if (this.getProcess(process.getBlock()) != null) {
+        RegenerationProcess existing = cache.putIfAbsent(process.getBlock(), process);
+        if (existing != null && existing != process) {
             log.fine(() -> String.format("Cache already contains process %s", process.getId()));
-            return;
+            return false;
         }
 
-        cache.put(process.getBlock(), process);
         log.fine(() -> "Registered regeneration process " + process);
+        return true;
     }
 
     @Nullable
@@ -174,18 +182,8 @@ public class RegenerationManager {
         cache.values().forEach(RegenerationProcess::revertBlock);
     }
 
-    // Can only be called from the main thread
-    private void purgeExpired() {
-        // Clear invalid processes
-        for (RegenerationProcess process : cache.values()) {
-            if (process.getTimeLeft() < 0 && process.shouldRegenerate()) {
-                if (Bukkit.isPrimaryThread()) {
-                    process.regenerateBlock();
-                } else {
-                    Bukkit.getScheduler().runTask(plugin, process::regenerateBlock);
-                }
-            }
-        }
+    public void stopAll() {
+        cache.values().forEach(RegenerationProcess::stop);
     }
 
     public void save() {
@@ -193,6 +191,11 @@ public class RegenerationManager {
     }
 
     public void save(boolean sync) {
+        if (!storageLoadComplete) {
+            log.warning("Skipped saving regeneration data because startup loading did not complete.");
+            return;
+        }
+
         final File dataFile = new File(plugin.getDataFolder(), "/Data.json");
 
         if (cache.isEmpty()) {
@@ -209,10 +212,10 @@ public class RegenerationManager {
             return;
         }
 
-        cache.values().forEach(process -> process.setTimeLeft(process.getRegenerationTime() - System.currentTimeMillis()));
-
-        // TODO: Shouldn't be required
-        purgeExpired();
+        cache.values().stream()
+                .filter(RegenerationProcess::shouldRegenerate)
+                .forEach(process -> process.setTimeLeft(Math.max(0L,
+                        process.getRegenerationTime() - System.currentTimeMillis())));
 
         final List<RegenerationProcess> finalCache = new ArrayList<>(cache.values());
 
@@ -238,26 +241,18 @@ public class RegenerationManager {
     }
 
     public void load() {
-        loadFromStorage().thenAcceptAsync(loadedProcesses ->
-                Bukkit.getScheduler().runTask(plugin, () -> {
-                    cache.clear();
+        loadFromStorage().thenAccept(loadedProcesses -> Scheduler.runGlobal(plugin, () -> {
+            if (loadedProcesses == null) {
+                storageLoadComplete = true;
+                return;
+            }
 
-                    if (loadedProcesses == null) {
-                        return;
-                    }
-
-                    if (plugin.getPresetManager().isRetry() && this.retry) {
-                        log.warning("Some process couldn't be loaded, but might be salvageable. Trying again after a complete server load...");
-                    } else {
-                        // Start em
-                        for (RegenerationProcess loadedProcess : loadedProcesses) {
-                            if (loadedProcess != null && convertProcess(loadedProcess)) {
-                                loadedProcess.start();
-                            }
-                        }
-                        log.info("Loaded " + this.cache.size() + " regeneration process(es)...");
-                    }
-                })).exceptionally(e -> {
+            if (plugin.getPresetManager().isRetry() && this.retry) {
+                log.warning("Some process couldn't be loaded, but might be salvageable. Trying again after a complete server load...");
+            } else {
+                activateProcesses(loadedProcesses);
+            }
+        })).exceptionally(e -> {
             log.log(Level.SEVERE, "Could not load processes: " + e.getMessage(), e);
             return null;
         });
@@ -269,25 +264,57 @@ public class RegenerationManager {
         }
 
         this.retry = false;
+        this.storageLoadComplete = false;
 
-        loadFromStorage().thenAcceptAsync(loadedProcesses -> {
-            cache.clear();
-
+        loadFromStorage().thenAccept(loadedProcesses -> Scheduler.runGlobal(plugin, () -> {
             if (loadedProcesses == null) {
                 throw new RuntimeException("Could not load processes from storage.");
             }
 
-            // We can throw away processes that are not valid. Should do no harm.
-            for (RegenerationProcess loadedProcess : loadedProcesses) {
-                if (loadedProcess != null && convertProcess(loadedProcess)) {
-                    loadedProcess.start();
-                }
-            }
-            log.info("Loaded " + this.cache.size() + " regeneration process(es)...");
-        }).exceptionally(e -> {
+            activateProcesses(loadedProcesses);
+        })).exceptionally(e -> {
             log.log(Level.SEVERE, "Could not load processes: " + e.getMessage(), e);
             return null;
         });
+    }
+
+    private void activateProcesses(List<RegenerationProcess> loadedProcesses) {
+        Map<RegenerationProcess, Location> pending = new LinkedHashMap<>();
+        for (RegenerationProcess process : loadedProcesses) {
+            if (process == null || process.getLocation() == null) {
+                continue;
+            }
+
+            SimpleLocation stored = process.getLocation();
+            World world = plugin.getServer().getWorld(stored.getWorld());
+            if (world == null) {
+                log.warning("Could not load process " + process + ", world is invalid or not loaded.");
+                continue;
+            }
+
+            Location location = new Location(world, stored.getX(), stored.getY(), stored.getZ());
+            pending.put(process, location);
+        }
+
+        AtomicInteger remaining = new AtomicInteger(pending.size());
+        for (Map.Entry<RegenerationProcess, Location> entry : pending.entrySet()) {
+            RegenerationProcess process = entry.getKey();
+            Scheduler.runAt(plugin, entry.getValue(), () -> {
+                try {
+                    if (convertProcess(process)) {
+                        process.start();
+                    }
+                } finally {
+                    if (remaining.decrementAndGet() == 0) {
+                        storageLoadComplete = true;
+                    }
+                }
+            });
+        }
+        if (remaining.get() == 0) {
+            storageLoadComplete = true;
+        }
+        log.info("Scheduled " + remaining.get() + " regeneration process(es) for loading...");
     }
 
     @NotNull

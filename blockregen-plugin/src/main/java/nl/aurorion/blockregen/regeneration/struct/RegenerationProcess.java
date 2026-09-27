@@ -12,12 +12,13 @@ import nl.aurorion.blockregen.material.BlockRegenMaterial;
 import nl.aurorion.blockregen.material.builtin.MinecraftMaterial;
 import nl.aurorion.blockregen.preset.BlockPreset;
 import nl.aurorion.blockregen.preset.FixedNumberValue;
+import nl.aurorion.blockregen.scheduler.Scheduler;
+import nl.aurorion.blockregen.scheduler.TaskHandle;
 import nl.aurorion.blockregen.util.Locations;
 import nl.aurorion.blockregen.version.api.NodeData;
 import org.bukkit.Bukkit;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
-import org.bukkit.scheduler.BukkitTask;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -68,7 +69,7 @@ public class RegenerationProcess {
     @Setter
     private transient BlockRegenMaterial regenerateInto;
 
-    private transient BukkitTask task;
+    private transient TaskHandle task;
 
     public RegenerationProcess(Block block, BlockPreset preset, @NotNull BlockRegenMaterial originalMaterial) {
         this.id = UUID.randomUUID();
@@ -94,7 +95,9 @@ public class RegenerationProcess {
 
         // Register that the process is actually running now
         // #start() can be called even on a process already in cache due to #contains() checks (which use #equals()) in RegenerationManager.
-        plugin.getRegenerationManager().registerProcess(this);
+        if (!plugin.getRegenerationManager().registerProcess(this)) {
+            return false;
+        }
 
         if (shouldRegenerate()) {
             // If timeLeft is -1, generate a new one from preset regen delay.
@@ -107,13 +110,13 @@ public class RegenerationProcess {
 
             // No need to start a task when it's time to regenerate already.
             if (timeLeft == 0 || regenerationTime <= System.currentTimeMillis()) {
-                Bukkit.getScheduler().runTask(plugin, this::regenerate);
+                Scheduler.runAt(plugin, block.getLocation(), this::regenerate);
                 log.fine(() -> "Regenerated the process upon start.");
                 return false;
             }
         }
 
-        Bukkit.getScheduler().runTask(plugin, this::replaceBlock);
+        Scheduler.runAt(plugin, block.getLocation(), this::replaceBlock);
 
         // No regeneration will be happening. Don't start the task.
         if (!shouldRegenerate()) {
@@ -131,7 +134,7 @@ public class RegenerationProcess {
 
     private void startTask() {
         // Start the task
-        this.task = Bukkit.getScheduler().runTaskLater(BlockRegenPluginImpl.getInstance(), this::regenerate, timeLeft / 50);
+        this.task = Scheduler.runAtLater(BlockRegenPluginImpl.getInstance(), block.getLocation(), this::regenerate, timeLeft / 50);
         log.fine(() -> String.format("Regenerate %s in %ds", this, timeLeft / 1000));
     }
 
@@ -202,11 +205,9 @@ public class RegenerationProcess {
 
         regenerateBlock();
 
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            if (preset.getRegenerationParticle() != null) {
-                plugin.getParticleManager().displayParticle(preset.getRegenerationParticle(), block);
-            }
-        });
+        if (preset.getRegenerationParticle() != null) {
+            plugin.getParticleManager().displayParticle(preset.getRegenerationParticle(), block);
+        }
 
         this.task = null;
     }
@@ -288,7 +289,7 @@ public class RegenerationProcess {
         replaceMaterial.applyData(block); // Apply configured data if any
 
         // Otherwise skull textures wouldn't update.
-        Bukkit.getScheduler().runTaskLater(BlockRegenPluginImpl.getInstance(), () -> block.getState().update(true), 1L);
+        Scheduler.runAtLater(BlockRegenPluginImpl.getInstance(), block.getLocation(), () -> block.getState().update(true), 1L);
         log.fine(() -> "Replaced block for " + this);
     }
 
@@ -399,7 +400,7 @@ public class RegenerationProcess {
     public String toString() {
         return String.format("{id=%s; task=%s; presetName=%s; worldName=%s; regionName=%s; block=%s; originalData=%s; originalMaterial=%s; originalCustomMaterial=%s; regenerateInto=%s; replaceMaterial=%s; timeLeft=%d; regenerationTime=%d}",
                 id,
-                task == null ? "null" : task.getTaskId(),
+                task == null ? "null" : task.getId(),
                 presetName,
                 worldName,
                 regionName,

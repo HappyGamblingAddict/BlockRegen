@@ -30,6 +30,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.stream.Collectors;
 
@@ -38,7 +39,7 @@ public class PresetManager {
 
     private final BlockRegenPlugin plugin;
 
-    private final Map<String, BlockPreset> presets = new HashMap<>();
+    private final Map<String, BlockPreset> presets = new ConcurrentHashMap<>();
 
     @Getter
     private final GenericConditionProvider conditions = GenericConditionProvider.empty();
