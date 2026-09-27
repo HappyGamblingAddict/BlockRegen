@@ -20,18 +20,20 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 @Log
 public class RegionManager {
 
     private final BlockRegenPlugin plugin;
 
-    private final List<RegenerationArea> loadedAreas = new ArrayList<>();
+    private final List<RegenerationArea> loadedAreas = new CopyOnWriteArrayList<>();
 
     // Set of regions that failed to load.
-    private final Set<RawRegion> failedRegions = new HashSet<>();
+    private final Set<RawRegion> failedRegions = ConcurrentHashMap.newKeySet();
 
-    private final Map<UUID, RegionSelection> selections = new HashMap<>();
+    private final Map<UUID, RegionSelection> selections = new ConcurrentHashMap<>();
 
     public RegionManager(BlockRegenPlugin plugin) {
         this.plugin = plugin;
@@ -287,15 +289,7 @@ public class RegionManager {
     }
 
     public void removeArea(@NotNull String name) {
-        Iterator<RegenerationArea> it = loadedAreas.iterator();
-        while (it.hasNext()) {
-            RegenerationArea area = it.next();
-
-            if (Objects.equals(area.getName(), name)) {
-                it.remove();
-                break;
-            }
-        }
+        loadedAreas.removeIf(area -> Objects.equals(area.getName(), name));
         this.sort();
     }
 

@@ -4,6 +4,7 @@ import com.cryptomorin.xseries.XEntityType;
 import lombok.extern.java.Log;
 import nl.aurorion.blockregen.BlockRegenPlugin;
 import nl.aurorion.blockregen.particle.Particle;
+import nl.aurorion.blockregen.scheduler.Scheduler;
 import nl.aurorion.blockregen.util.Colors;
 import org.bukkit.*;
 import org.bukkit.FireworkEffect.Type;
@@ -52,6 +53,6 @@ public class FireWorks implements Particle {
                 .build());
         fw.setFireworkMeta(fwm);
 
-        Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, fw::detonate, 2L);
+        Scheduler.runForLater(plugin, fw, fw::detonate, 2L);
     }
 }

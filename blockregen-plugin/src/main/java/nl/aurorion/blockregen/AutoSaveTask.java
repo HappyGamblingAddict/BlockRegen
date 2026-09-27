@@ -2,15 +2,15 @@ package nl.aurorion.blockregen;
 
 import lombok.Getter;
 import lombok.extern.java.Log;
-import org.bukkit.Bukkit;
-import org.bukkit.scheduler.BukkitTask;
+import nl.aurorion.blockregen.scheduler.Scheduler;
+import nl.aurorion.blockregen.scheduler.TaskHandle;
 
 @Log
 public class AutoSaveTask implements Runnable {
 
     private int period;
 
-    private BukkitTask task;
+    private TaskHandle task;
 
     @Getter
     private boolean running = false;
@@ -31,7 +31,7 @@ public class AutoSaveTask implements Runnable {
         }
 
         running = true;
-        task = Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, this, period * 20L, period * 20L);
+        task = Scheduler.repeatGlobal(plugin, this, period * 20L, period * 20L);
         log.info("Starting auto-save.. with an interval of " + period + " seconds.");
     }
 

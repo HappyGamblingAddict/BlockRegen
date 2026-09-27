@@ -11,9 +11,9 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -22,7 +22,7 @@ public class EventManager {
 
     private final BlockRegenPlugin plugin;
 
-    private final Map<String, PresetEvent> loadedEvents = new HashMap<>();
+    private final Map<String, PresetEvent> loadedEvents = new ConcurrentHashMap<>();
 
     public EventManager(BlockRegenPlugin plugin) {
         this.plugin = plugin;

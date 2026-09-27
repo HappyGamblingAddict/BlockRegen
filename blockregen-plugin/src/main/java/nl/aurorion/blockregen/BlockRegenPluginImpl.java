@@ -26,6 +26,7 @@ import nl.aurorion.blockregen.regeneration.RegenerationEventHandler;
 import nl.aurorion.blockregen.regeneration.RegenerationEventHandlerImpl;
 import nl.aurorion.blockregen.regeneration.RegenerationManager;
 import nl.aurorion.blockregen.region.RegionManager;
+import nl.aurorion.blockregen.scheduler.Scheduler;
 import nl.aurorion.blockregen.util.BukkitVersions;
 import nl.aurorion.blockregen.util.GsonHelper;
 import nl.aurorion.blockregen.util.SubclassAdapter;
@@ -38,6 +39,7 @@ import org.bukkit.block.Block;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.ConsoleCommandSender;
 import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.entity.Entity;
 import org.bukkit.event.Listener;
 import org.bukkit.plugin.PluginManager;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -196,7 +198,7 @@ public class BlockRegenPluginImpl extends JavaPlugin implements Listener, BlockR
         enableMetrics();
 
         if (getConfig().getBoolean("Update-Checker", false)) {
-            getServer().getScheduler().runTaskLaterAsynchronously(this, () -> {
+            Scheduler.runAsyncLater(this, () -> {
                 UpdateCheck updater = new UpdateCheck(this, 9885);
                 try {
                     if (updater.checkForUpdates()) {
@@ -209,7 +211,7 @@ public class BlockRegenPluginImpl extends JavaPlugin implements Listener, BlockR
         }
 
         // Check for deps and start auto save once the server is done loading.
-        Bukkit.getScheduler().runTaskLater(this, () -> {
+        Scheduler.runGlobalLater(this, () -> {
             compatibilityManager.discover(!presetManager.isRetry());
 
             presetManager.reattemptLoad();
@@ -257,7 +259,13 @@ public class BlockRegenPluginImpl extends JavaPlugin implements Listener, BlockR
         }
 
         consoleHandler.removeListener(sender);
-        Message.RELOAD.optional().ifPresent(sender::sendMessage);
+        Message.RELOAD.optional().ifPresent(message -> {
+            if (sender instanceof Entity) {
+                Scheduler.runFor(this, (Entity) sender, () -> sender.sendMessage(message));
+            } else {
+                sender.sendMessage(message);
+            }
+        });
     }
 
     private void registerDebugListener() {
@@ -279,7 +287,11 @@ public class BlockRegenPluginImpl extends JavaPlugin implements Listener, BlockR
         }
 
         if (finishedLoading) {
-            regenerationManager.revertAll();
+            if (Scheduler.isFolia()) {
+                regenerationManager.stopAll();
+            } else {
+                regenerationManager.revertAll();
+            }
             regenerationManager.save(true);
 
             regionManager.save();

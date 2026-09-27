@@ -14,6 +14,9 @@ Watch a video about how this plugin works [here](https://www.youtube.com/watch?v
 
 This plugin runs on Java 8.
 
+Folia is supported on server versions that provide the regionized scheduler API. Runtime reload is disabled on Folia;
+restart the server after changing BlockRegen configuration.
+
 ## Development
 
 If you wish to contribute or develop a fork of the plugin for yourself, you're more than welcome to.

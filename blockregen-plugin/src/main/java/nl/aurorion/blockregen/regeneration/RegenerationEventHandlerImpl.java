@@ -395,8 +395,8 @@ public class RegenerationEventHandlerImpl implements RegenerationEventHandler {
                 .with(RegenerationContextKey.BLOCK, block)
                 .with(RegenerationContextKey.PARSER, parser);
 
-        // Run rewards async
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+        // Reward providers access the player and block, so keep this work on the owning region.
+        {
             Map<ItemStack, Boolean> drops = new HashMap<>();
             AtomicInteger experience = new AtomicInteger(0);
 
@@ -485,10 +485,8 @@ public class RegenerationEventHandlerImpl implements RegenerationEventHandler {
 
             // Trigger Jobs Break if enabled
             if (plugin.getConfig().getBoolean("Jobs-Rewards", false) && plugin.getCompatibilityManager().getJobs().isLoaded()) {
-                Bukkit.getScheduler().runTask(plugin,
-                        () -> plugin.getCompatibilityManager().getJobs().get()
-                                .ifPresent((jobs) -> jobs.triggerBlockBreakAction(player, block))
-                );
+                plugin.getCompatibilityManager().getJobs().get()
+                        .ifPresent((jobs) -> jobs.triggerBlockBreakAction(player, block));
             }
 
             // Other rewards - commands, money etc.
@@ -503,10 +501,9 @@ public class RegenerationEventHandlerImpl implements RegenerationEventHandler {
             }
 
             if (preset.getParticle() != null) {
-                Bukkit.getScheduler().runTask(plugin,
-                        () -> plugin.getParticleManager().displayParticle(preset.getParticle(), block));
+                plugin.getParticleManager().displayParticle(preset.getParticle(), block);
             }
-        });
+        }
     }
 
     private void spawnExp(Location location, int amount) {
@@ -514,8 +511,7 @@ public class RegenerationEventHandlerImpl implements RegenerationEventHandler {
             return;
         }
 
-        Bukkit.getScheduler().runTask(plugin,
-                () -> location.getWorld().spawn(location, ExperienceOrb.class).setExperience(amount));
+        location.getWorld().spawn(location, ExperienceOrb.class).setExperience(amount);
         log.fine(() -> String.format("Spawning xp (%d).", amount));
     }
 
@@ -541,37 +537,35 @@ public class RegenerationEventHandlerImpl implements RegenerationEventHandler {
     }
 
     private void giveItems(Map<ItemStack, Boolean> itemStacks, BlockState blockState, Player player) {
-        Bukkit.getScheduler().runTask(plugin, () -> {
-            List<Item> items = new ArrayList<>();
+        List<Item> items = new ArrayList<>();
 
-            for (Map.Entry<ItemStack, Boolean> entry : itemStacks.entrySet()) {
-                ItemStack item = entry.getKey();
+        for (Map.Entry<ItemStack, Boolean> entry : itemStacks.entrySet()) {
+            ItemStack item = entry.getKey();
 
-                if (entry.getValue()) {
-                    log.fine(() -> "Dropping item " + item.getType() + "x" + item.getAmount());
+            if (entry.getValue()) {
+                log.fine(() -> "Dropping item " + item.getType() + "x" + item.getAmount());
 
-                    Location location = blockState.getLocation().clone().add(.5, .5, .5);
-                    items.add(plugin.getVersionManager().getMethods().createDroppedItem(location, item));
-                } else {
-                    log.fine(() -> "Giving item " + item.getType() + "x" + item.getAmount());
+                Location location = blockState.getLocation().clone().add(.5, .5, .5);
+                items.add(plugin.getVersionManager().getMethods().createDroppedItem(location, item));
+            } else {
+                log.fine(() -> "Giving item " + item.getType() + "x" + item.getAmount());
 
-                    Map<Integer, ItemStack> left = player.getInventory().addItem(item);
-                    if (!left.isEmpty()) {
-                        if (plugin.getConfig().getBoolean("Drop-Items-When-Full", true)) {
-                            log.fine(() -> "Inventory full. Dropping item on the ground.");
+                Map<Integer, ItemStack> left = player.getInventory().addItem(item);
+                if (!left.isEmpty()) {
+                    if (plugin.getConfig().getBoolean("Drop-Items-When-Full", true)) {
+                        log.fine(() -> "Inventory full. Dropping item on the ground.");
 
-                            Message.INVENTORY_FULL_DROPPED.send(player);
+                        Message.INVENTORY_FULL_DROPPED.send(player);
 
-                            ItemStack leftStack = left.get(left.keySet().iterator().next());
-                            items.add(plugin.getVersionManager().getMethods().createDroppedItem(player.getLocation(), leftStack));
-                        } else {
-                            Message.INVENTORY_FULL_LOST.send(player);
-                        }
+                        ItemStack leftStack = left.get(left.keySet().iterator().next());
+                        items.add(plugin.getVersionManager().getMethods().createDroppedItem(player.getLocation(), leftStack));
+                    } else {
+                        Message.INVENTORY_FULL_LOST.send(player);
                     }
                 }
             }
+        }
 
-            plugin.getVersionManager().getMethods().handleDropItemEvent(player, blockState, items);
-        });
+        plugin.getVersionManager().getMethods().handleDropItemEvent(player, blockState, items);
     }
 }

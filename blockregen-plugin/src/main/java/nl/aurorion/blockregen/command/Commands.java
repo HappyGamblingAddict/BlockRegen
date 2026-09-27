@@ -7,6 +7,7 @@ import nl.aurorion.blockregen.Message;
 import nl.aurorion.blockregen.event.struct.PresetEvent;
 import nl.aurorion.blockregen.preset.BlockPreset;
 import nl.aurorion.blockregen.regeneration.struct.RegenerationProcess;
+import nl.aurorion.blockregen.scheduler.Scheduler;
 import nl.aurorion.blockregen.region.selection.RegionSelection;
 import nl.aurorion.blockregen.region.struct.RegenerationArea;
 import nl.aurorion.blockregen.region.struct.RegenerationRegion;
@@ -120,7 +121,12 @@ public class Commands implements CommandExecutor {
                     return false;
                 }
 
-                plugin.reload(sender);
+                if (Scheduler.isFolia()) {
+                    sender.sendMessage(Colors.color("&cRuntime reload is not supported on Folia. Restart the server to reload BlockRegen."));
+                    break;
+                }
+
+                Scheduler.runGlobal(plugin, () -> plugin.reload(sender));
                 break;
             }
             case "bypass": {
@@ -603,7 +609,7 @@ public class Commands implements CommandExecutor {
                     }
                 }
 
-                Bukkit.getScheduler().runTask(plugin, () -> toRegen.forEach(RegenerationProcess::regenerate));
+                toRegen.forEach(process -> Scheduler.runAt(plugin, process.getBlock().getLocation(), process::regenerate));
 
                 Message.REGENERATED_PROCESSES.mapAndSend(sender, str -> str.replace("%count%", String.valueOf(toRegen.size())));
                 break;
@@ -626,7 +632,7 @@ public class Commands implements CommandExecutor {
                  *
                  * */
 
-                Collection<RegenerationProcess> processes = plugin.getRegenerationManager().getCache();
+                Collection<RegenerationProcess> processes = new ArrayList<>(plugin.getRegenerationManager().getCache());
 
                 if (processes.isEmpty()) {
                     stats.append("&7None to show.");
@@ -634,7 +640,7 @@ public class Commands implements CommandExecutor {
                     break;
                 }
 
-                Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+                {
                     Map<String, List<RegenerationProcess>> byWorldCollect = processes.stream()
                             .collect(Collectors.groupingBy(RegenerationProcess::getWorldName));
 
@@ -662,7 +668,7 @@ public class Commands implements CommandExecutor {
                         }
                     }
                     sender.sendMessage(Colors.color(stats.toString()));
-                });
+                }
                 break;
             }
             case "debug":
